@@ -149,11 +149,12 @@ async def _ask_user(ctx, kind, email, preview) -> str:
         return "unsupported"
     try:
         if kind == "remove_account":
-            msg = f"Disconnect {email}? This revokes its token; re-linking needs browser sign-in."
+            msg = (f"Disconnect {email}? This revokes its token; re-linking needs browser sign-in.\n"
+                   "Tick 'confirm' and accept to proceed; anything else cancels.")
         else:
             g = preview.get
             msg = "\n".join([
-                f"{kind} from {email}",
+                f"{kind} from {email}  (tick 'confirm' and accept to send; anything else cancels)",
                 f"To: {g('to', '')}", f"Cc: {g('cc', '')}", f"Bcc: {g('bcc', '') or '(none)'}",
                 f"Recipients (bare): {', '.join(g('all_recipients', []))}",
                 f"Subject: {g('subject', '')}",
