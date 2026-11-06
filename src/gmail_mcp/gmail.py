@@ -8,6 +8,17 @@ from email.message import EmailMessage
 from email.utils import getaddresses
 
 
+def addresses(*header_values) -> list[tuple[str, str]]:
+    """(name, addr) pairs across several header values. Parsed one value at a time and skipping empties,
+    because Python 3.12's strict getaddresses() returns nothing for the whole batch if any value is empty."""
+    out = []
+    for v in header_values:
+        v = str(v or "").strip()
+        if v:
+            out += [(n, a) for n, a in getaddresses([v]) if a]
+    return out
+
+
 def _b64d(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
@@ -125,7 +136,7 @@ def _plain(msg: EmailMessage) -> str:
 
 def build_reply(service, sender, message_id, body, reply_all=False) -> tuple[EmailMessage, str]:
     orig, thread_id = get_message_raw(service, message_id)
-    own = any(a.lower() == sender.lower() for _, a in getaddresses([str(orig["From"] or "")]))
+    own = any(a.lower() == sender.lower() for _, a in addresses(orig["From"]))
     if own:  # replying to our own message: address the original recipients, like Gmail does
         to = [str(orig["To"] or "")]
         cc = [str(orig["Cc"])] if reply_all and orig["Cc"] else None
@@ -133,10 +144,10 @@ def build_reply(service, sender, message_id, body, reply_all=False) -> tuple[Ema
         to = [str(orig["Reply-To"] or orig["From"])]
         cc = None
         if reply_all:
-            skip = {sender.lower(), *(a.lower() for _, a in getaddresses(to))}
+            skip = {sender.lower(), *(a.lower() for _, a in addresses(*to))}
             cc = [f"{n} <{a}>" if n else a
-                  for n, a in getaddresses([str(orig["To"] or ""), str(orig["Cc"] or "")])
-                  if a and a.lower() not in skip]
+                  for n, a in addresses(orig["To"], orig["Cc"])
+                  if a.lower() not in skip]
     subj = str(orig["Subject"] or "")
     if not subj.lower().startswith("re:"):
         subj = "Re: " + subj

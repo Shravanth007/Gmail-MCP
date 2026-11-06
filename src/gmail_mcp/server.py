@@ -193,8 +193,7 @@ def _preview(msg) -> dict:
     return {
         "from_account": str(msg["From"]), "to": str(msg["To"] or ""), "cc": str(msg["Cc"] or ""),
         "bcc": str(msg["Bcc"] or ""), "subject": str(msg["Subject"] or ""),
-        "all_recipients": sorted({a.lower() for _, a in getaddresses(
-            [str(msg[h] or "") for h in ("To", "Cc", "Bcc")]) if a}),
+        "all_recipients": sorted({a.lower() for _, a in gmail.addresses(msg["To"], msg["Cc"], msg["Bcc"])}),
         "body": text[:PREVIEW_BODY_MAX] + note,
         "attachments": [p.get_filename() or "attachment" for p in msg.iter_attachments()],
     }
@@ -353,8 +352,7 @@ async def send_draft(draft_id: str, account: str | None = None, confirm_token: s
         h = gmail._headers(p)
         text = gmail._extract_text(p)
         return {"from_account": email, "to": h.get("to", ""), "cc": h.get("cc", ""), "bcc": h.get("bcc", ""),
-                "all_recipients": sorted({a.lower() for _, a in getaddresses(
-                    [h.get("to", ""), h.get("cc", ""), h.get("bcc", "")]) if a}),
+                "all_recipients": sorted({a.lower() for _, a in gmail.addresses(h.get("to"), h.get("cc"), h.get("bcc"))}),
                 "subject": h.get("subject", ""), "body": text[:PREVIEW_BODY_MAX],
                 "attachments": gmail._attachments(p)}
 

@@ -384,3 +384,15 @@ def test_drafts_only_hides_send_tools(monkeypatch):
     finally:
         monkeypatch.delenv("GMAIL_MCP_DRAFTS_ONLY")
         importlib.reload(server)
+
+
+def test_addresses_survive_empty_headers_py312_strict_parser():
+    # Python 3.12 strict getaddresses() returns [('', '')] for the whole batch if any value is empty.
+    assert gmail.addresses("a@x.com", "", None) == [("", "a@x.com")]
+    msg = gmail.build_message("me@x.com", ["only@x.com"], "S", "B")  # no Cc, no Bcc
+    assert server._preview(msg)["all_recipients"] == ["only@x.com"]
+    o = EmailMessage()
+    o["From"], o["To"], o["Subject"], o["Message-ID"] = "x@y.com", "me@z.com, bob@b.com", "Hi", "<m1@y.com>"
+    o.set_content("original")  # no Cc header at all
+    reply, _ = gmail.build_reply(_svc(_raw(o)), "me@z.com", "m1", "thanks", reply_all=True)
+    assert str(reply["Cc"]) == "bob@b.com"
