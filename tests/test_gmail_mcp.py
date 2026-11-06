@@ -1,8 +1,5 @@
-import asyncio
 import base64
-import importlib
 import time
-import types
 from email.message import EmailMessage
 
 import keyring
@@ -19,10 +16,6 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(accounts, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(accounts, "REGISTRY_FILE", tmp_path / "accounts.json")
     server._PENDING.clear()
-
-
-def run(coro):
-    return asyncio.run(coro)
 
 
 def reg(**accts):
@@ -165,20 +158,20 @@ def test_send_email_two_step(monkeypatch):
     svc = FakeService()
     monkeypatch.setattr(accounts, "gmail_service", lambda e: svc)
     kw = dict(to=["a@x.com"], subject="S", body="B")
-    first = run(server.send_email(**kw))
+    first = server.send_email(**kw)
     assert first["status"] == "needs_confirmation" and svc.sent == []
     assert first["preview"]["to"] == "a@x.com" and first["from_account"] == "me@x.com"
-    done = run(server.send_email(**kw, confirm_token=first["confirm_token"]))
+    done = server.send_email(**kw, confirm_token=first["confirm_token"])
     assert len(svc.sent) == 1 and done["from_account"] == "me@x.com" and done["message_id"] == "sent1"
     with pytest.raises(ValueError, match="invalid or expired"):
-        run(server.send_email(**kw, confirm_token=first["confirm_token"]))
+        server.send_email(**kw, confirm_token=first["confirm_token"])
     assert len(svc.sent) == 1
-    tok = run(server.send_email(**kw))["confirm_token"]
+    tok = server.send_email(**kw)["confirm_token"]
     with pytest.raises(ValueError, match="arguments changed"):
-        run(server.send_email(to=["evil@x.com"], subject="S", body="B", confirm_token=tok))
+        server.send_email(to=["evil@x.com"], subject="S", body="B", confirm_token=tok)
     assert len(svc.sent) == 1
     with pytest.raises(ValueError, match="Invalid email"):
-        run(server.send_email(to=["not-an-address"], subject="S", body="B"))
+        server.send_email(to=["not-an-address"], subject="S", body="B")
 
 
 def test_forward_reattaches_text_attachment_and_addr_validation():
@@ -263,9 +256,9 @@ def test_remove_account_tool_is_gated(monkeypatch):
     reg(**{"a@x.com": "work"})
     called = []
     monkeypatch.setattr(accounts, "remove_account", lambda a: called.append(a) or a)
-    first = run(server.remove_account("work"))
+    first = server.remove_account("work")
     assert first["status"] == "needs_confirmation" and not called
-    assert run(server.remove_account("work", confirm_token=first["confirm_token"])) == {"removed": "a@x.com", "from_account": "a@x.com"}
+    assert server.remove_account("work", confirm_token=first["confirm_token"]) == {"removed": "a@x.com", "from_account": "a@x.com"}
     assert called == ["a@x.com"]
 
 
@@ -335,52 +328,3 @@ def test_search_emails_across_group(monkeypatch):
     monkeypatch.setattr(gmail, "search", lambda svc, q, n: [{"id": svc}])
     out = server.search_emails("hi")
     assert [r["account"] for r in out["results"]] == ["a@x.com", "b@y.com", "c@z.com"] and "errors" not in out
-
-
-# ---- elicitation, preview, drafts-only ----
-def _fake_ctx(supported=True, action="accept", confirm=True):
-    async def elicit(message, schema):
-        return types.SimpleNamespace(action=action, data=server._Confirm(confirm=confirm))
-    session = types.SimpleNamespace(check_client_capability=lambda c: supported)
-    return types.SimpleNamespace(session=session, elicit=elicit)
-
-
-def _send_setup(monkeypatch):
-    accounts.save_registry({"me@x.com": {"alias": None, "added": "d"}})
-    svc = FakeService()
-    monkeypatch.setattr(accounts, "gmail_service", lambda e: svc)
-    return svc
-
-
-def test_send_email_dialog_accept_sends_immediately(monkeypatch):
-    svc = _send_setup(monkeypatch)
-    out = run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=_fake_ctx()))
-    assert out["confirmed_by"] == "user_dialog" and len(svc.sent) == 1 and not server._PENDING
-
-
-def test_send_email_dialog_decline_cancels(monkeypatch):
-    svc = _send_setup(monkeypatch)
-    out = run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=_fake_ctx(action="decline")))
-    assert out["status"] == "cancelled" and svc.sent == [] and not server._PENDING
-
-
-def test_send_email_no_elicitation_falls_back_to_token(monkeypatch):
-    svc = _send_setup(monkeypatch)
-    out = run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=_fake_ctx(supported=False)))
-    assert out["status"] == "needs_confirmation" and svc.sent == []
-
-
-def test_preview_all_recipients_bare_lowercase():
-    msg = gmail.build_message("me@x.com", ["Accountant <Evil@X.com>"], "S", "B", bcc=["Z@y.com"])
-    assert server._preview(msg)["all_recipients"] == ["evil@x.com", "z@y.com"]
-
-
-def test_drafts_only_hides_send_tools(monkeypatch):
-    monkeypatch.setenv("GMAIL_MCP_DRAFTS_ONLY", "1")
-    try:
-        importlib.reload(server)
-        names = {t.name for t in asyncio.run(server.mcp.list_tools())}
-        assert "send_email" not in names and "create_draft" in names
-    finally:
-        monkeypatch.delenv("GMAIL_MCP_DRAFTS_ONLY")
-        importlib.reload(server)
