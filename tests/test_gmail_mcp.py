@@ -170,6 +170,7 @@ def test_send_email_two_step(monkeypatch):
     assert first["preview"]["to"] == "a@x.com" and first["from_account"] == "me@x.com"
     done = run(server.send_email(**kw, confirm_token=first["confirm_token"]))
     assert len(svc.sent) == 1 and done["from_account"] == "me@x.com" and done["message_id"] == "sent1"
+    assert done["confirmed_by"] == "confirm_token"
     with pytest.raises(ValueError, match="invalid or expired"):
         run(server.send_email(**kw, confirm_token=first["confirm_token"]))
     assert len(svc.sent) == 1
@@ -265,7 +266,7 @@ def test_remove_account_tool_is_gated(monkeypatch):
     monkeypatch.setattr(accounts, "remove_account", lambda a: called.append(a) or a)
     first = run(server.remove_account("work"))
     assert first["status"] == "needs_confirmation" and not called
-    assert run(server.remove_account("work", confirm_token=first["confirm_token"])) == {"removed": "a@x.com", "from_account": "a@x.com"}
+    assert run(server.remove_account("work", confirm_token=first["confirm_token"])) == {"removed": "a@x.com", "from_account": "a@x.com", "confirmed_by": "confirm_token"}
     assert called == ["a@x.com"]
 
 
@@ -396,3 +397,41 @@ def test_addresses_survive_empty_headers_py312_strict_parser():
     o.set_content("original")  # no Cc header at all
     reply, _ = gmail.build_reply(_svc(_raw(o)), "me@z.com", "m1", "thanks", reply_all=True)
     assert str(reply["Cc"]) == "bob@b.com"
+
+
+# ---- auto-send opt-out ----
+def test_auto_send_sends_without_confirmation(monkeypatch):
+    svc = _send_setup(monkeypatch)
+    monkeypatch.setattr(server, "AUTO_SEND", True)
+    out = run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=None))
+    assert out["confirmed_by"] == "auto_send" and len(svc.sent) == 1 and not server._PENDING
+
+
+def test_auto_send_skips_dialog(monkeypatch):
+    svc = _send_setup(monkeypatch)
+    monkeypatch.setattr(server, "AUTO_SEND", True)
+    ctx = _fake_ctx(action="decline")
+    calls = []
+    orig = ctx.elicit
+
+    async def spy(message, schema):
+        calls.append(message)
+        return await orig(message, schema)
+    ctx.elicit = spy
+    out = run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=ctx))
+    assert out["confirmed_by"] == "auto_send" and len(svc.sent) == 1 and calls == []
+
+
+def test_auto_send_still_gates_remove_account(monkeypatch):
+    reg(**{"a@x.com": "work"})
+    monkeypatch.setattr(server, "AUTO_SEND", True)
+    called = []
+    monkeypatch.setattr(accounts, "remove_account", lambda a: called.append(a) or a)
+    assert run(server.remove_account("work", ctx=None))["status"] == "needs_confirmation" and not called
+
+
+def test_default_still_requires_confirmation(monkeypatch):
+    svc = _send_setup(monkeypatch)
+    assert server.AUTO_SEND is False
+    assert run(server.send_email(to=["a@x.com"], subject="S", body="B", ctx=None))["status"] == "needs_confirmation"
+    assert svc.sent == []
