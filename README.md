@@ -27,7 +27,7 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Each user brings the
      "mcpServers": {
        "gmail": {
          "command": "uv",
-         "args": ["--directory", "C:\\path\\to\\Gmail MCP server", "run", "gmail-mcp"]
+         "args": ["--directory", "C:\\path\\to\\Gmail-MCP", "run", "gmail-mcp"]
        }
      }
    }
