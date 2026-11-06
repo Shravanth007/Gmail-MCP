@@ -1,0 +1,13 @@
+# never commit OAuth client files or tokens
+credentials.json
+*.json
+.gmail-mcp/
+.tmp-home/
+
+# python / uv
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
