@@ -34,6 +34,24 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Each user brings the
    ```
    Claude Code: `claude mcp add gmail -- uv --directory "C:\path\to\Gmail-MCP" run gmail-mcp`
 
+## Configuration
+
+Optional environment variables:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `GMAIL_MCP_HOME` | `~/.gmail-mcp` | Directory for `accounts.json` and default credentials location |
+| `GMAIL_MCP_CREDENTIALS` | `~/.gmail-mcp/credentials.json` | Path to the Google OAuth client JSON |
+| `GMAIL_MCP_DRAFTS_ONLY` | off | `1` removes the four send tools |
+| `GMAIL_MCP_AUTO_SEND` | off | `1` sends without confirmation (see Security) |
+
+Claude Code: `claude mcp add gmail -e GMAIL_MCP_AUTO_SEND=1 -- uv --directory "C:\path\to\Gmail-MCP" run gmail-mcp`
+
+Claude Desktop: add an `"env"` key next to `"args"` in `claude_desktop_config.json`:
+```json
+"env": { "GMAIL_MCP_AUTO_SEND": "1" }
+```
+
 ## Security
 
 - OAuth tokens live in the OS keychain (Windows Credential Manager / macOS Keychain / Secret Service), encrypted by the OS credential store (DPAPI on Windows), never in plain files. `accounts.json` holds only emails and aliases.
@@ -42,6 +60,7 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Each user brings the
 - Replying to your own message addresses the original recipients, as Gmail does. Forwards carry every named attachment, including ones nested in signed mail.
 - Sends and account removal confirm through a client dialog (MCP elicitation, supported by Claude Code 2.1.76+). The dialog shows from/to/cc/bcc, bare recipient addresses (so display names can't hide the destination), subject, attachments and body. On clients without elicitation the server falls back to a preview plus a single-use `confirm_token` (5 min TTL, bound to account and action); changed arguments are rejected, and for `send_draft` the token is bound to the draft's message id, so a draft edited after the preview cannot be sent with the old token.
 - `GMAIL_MCP_DRAFTS_ONLY=1` removes the four send tools entirely (drafts can still be created).
+- `GMAIL_MCP_AUTO_SEND=1` turns OFF the confirmation for the four send tools so an autonomous agent can send on its own. Off by default. Only enable it for an agent you trust with the mailbox, in a session without other outbound tools; a prompt-injected agent can then send or forward anything. `remove_account` still confirms. Cannot be combined with drafts-only.
 - Linking uses `prompt=consent` so a refresh token is always issued; nothing is stored if Google omits it.
 - `remove-account` revokes the token with Google and deletes it from the keychain.
 - Logs go to stderr and never include tokens or message bodies.
